@@ -47,6 +47,12 @@ const App: React.FC = () => {
   const lastEventRef = useRef<string>(''); // Track last event ID
   const lastStatsRef = useRef<any>(null); // Track last match stats
   const pollCountRef = useRef<number>(0); // Track polling cycles for smart mode
+  const settingsRef = useRef(settings); // Ref to access latest settings in poll loop without re-triggering
+
+  // Update settings ref whenever settings change
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   // Initialize Audio Context on user start
   const handleStart = () => {
@@ -161,40 +167,56 @@ const App: React.FC = () => {
   // N8N POLLING LOOP: FETCHING NEW EVENTS
   // -------------------------------------------------------------------------
   useEffect(() => {
-      if (!isStarted || !settings.n8nUrl) return;
-      if (!settings.matchId) return; // Stop polling if no match selected
+      if (!isStarted) return;
+      
+      let isMounted = true;
+      let timeoutId: NodeJS.Timeout;
 
       const pollN8N = async () => {
-          console.log("Polling N8N...", settings.n8nUrl);
+          const currentSettings = settingsRef.current;
           
+          if (!currentSettings.n8nUrl || !currentSettings.matchId) {
+              // Retry in 1s if settings are missing/incomplete
+              if (isMounted) timeoutId = setTimeout(pollN8N, 1000);
+              return;
+          }
+
           // Increment Poll Count
           pollCountRef.current += 1;
           
-          // Logic: Call API-Football/Sportmonks every 3 polls (30s) OR if it's the very first poll
-          const shouldCallApi = pollCountRef.current % 3 === 0 || pollCountRef.current === 1;
-          console.log(`Poll #${pollCountRef.current} - Call API: ${shouldCallApi}`);
+          // Logic: Call API-Football/Sportmonks every 5 polls (5s) OR if it's the very first poll
+          // Increased frequency for better "Live" feel, but skip external API mostly
+          const shouldCallApi = pollCountRef.current % 5 === 0 || pollCountRef.current === 1;
+          
+          // console.log(`Poll #${pollCountRef.current} - Call API: ${shouldCallApi}`);
+
+          const controller = new AbortController();
+          const fetchTimeout = setTimeout(() => controller.abort(), 8000); // 8s Timeout
 
           try {
               // Real API Call to your N8N
-              const response = await fetch(settings.n8nUrl, {
+              const response = await fetch(currentSettings.n8nUrl, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
-                      matchId: settings.matchId,
+                      matchId: currentSettings.matchId,
                       type: 'POLL', // Explicitly differentiate poll from chat
                       lastEventId: lastEventRef.current,
                       lastStats: lastStatsRef.current,
-                      persona: settings.persona,
+                      persona: currentSettings.persona,
                       skipApi: !shouldCallApi, // Tell N8N to skip API call if filler time
-                      dataProvider: settings.dataProvider || 'api-football',
+                      dataProvider: currentSettings.dataProvider || 'api-football',
                       keys: {
-                          football: settings.apiFootballKey,
-                          sportmonks: settings.sportmonksKey,
-                          elevenLabs: settings.elevenLabsKey,
-                          openRouter: settings.openRouterKey
+                          football: currentSettings.apiFootballKey,
+                          sportmonks: currentSettings.sportmonksKey,
+                          elevenLabs: currentSettings.elevenLabsKey,
+                          openRouter: currentSettings.openRouterKey
                       }
-                  })
+                  }),
+                  signal: controller.signal
               });
+              
+              clearTimeout(fetchTimeout);
 
               if (!response.ok) {
                   const errText = await response.text();
@@ -203,118 +225,136 @@ const App: React.FC = () => {
               }
 
               const data = await response.json();
-              console.log("N8N Response:", data);
+              // console.log("N8N Response:", data);
 
-              // Update Stats History
-              if (data.currentStats) {
-                  lastStatsRef.current = data.currentStats;
-              }
-              
-              // Process new events from N8N
-              if (data.events && Array.isArray(data.events) && data.events.length > 0) {
-                 const newItems: AudioItem[] = [];
-                 
-                 data.events.forEach((event: any) => {
-                     // Prevent duplicates
-                     if (event.id === lastEventRef.current) return;
-                     lastEventRef.current = event.id;
+              if (isMounted) {
+                  // Update Stats History
+                  if (data.currentStats) {
+                      lastStatsRef.current = data.currentStats;
+                  }
+                  
+                  // Process new events from N8N
+                  if (data.events && Array.isArray(data.events) && data.events.length > 0) {
+                     const newItems: AudioItem[] = [];
                      
-                     try {
-                        // Convert Base64 audio to Blob URL
-                        let audioUrl = '';
-                        if (event.audioBase64) {
-                            const byteCharacters = atob(event.audioBase64);
-                            const byteNumbers = new Array(byteCharacters.length);
-                            for (let i = 0; i < byteCharacters.length; i++) {
-                                byteNumbers[i] = byteCharacters.charCodeAt(i);
+                     data.events.forEach((event: any) => {
+                         // Prevent duplicates
+                         if (event.id === lastEventRef.current) return;
+                         lastEventRef.current = event.id;
+                         
+                         try {
+                            // Convert Base64 audio to Blob URL
+                            let audioUrl = '';
+                            if (event.audioBase64) {
+                                const byteCharacters = atob(event.audioBase64);
+                                const byteNumbers = new Array(byteCharacters.length);
+                                for (let i = 0; i < byteCharacters.length; i++) {
+                                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                                }
+                                const byteArray = new Uint8Array(byteNumbers);
+                                const blob = new Blob([byteArray], { type: 'audio/mpeg' });
+                                audioUrl = URL.createObjectURL(blob);
                             }
-                            const byteArray = new Uint8Array(byteNumbers);
-                            const blob = new Blob([byteArray], { type: 'audio/mpeg' });
-                            audioUrl = URL.createObjectURL(blob);
-                        }
-                        
-                        newItems.push({
-                            id: event.id,
-                            filename: `ai_commentary_${event.id}.mp3`,
-                            source: AudioSource.AI,
-                            duration: 'Unknown',
-                            timestamp: new Date(),
-                            status: AudioStatus.QUEUED,
-                            description: event.description || event.text || 'New Event',
-                            audioUrl: audioUrl
+                            
+                            newItems.push({
+                                id: event.id,
+                                filename: `ai_commentary_${event.id}.mp3`,
+                                source: AudioSource.AI,
+                                duration: 'Unknown',
+                                timestamp: new Date(),
+                                status: AudioStatus.QUEUED,
+                                description: event.description || event.text || 'New Event',
+                                audioUrl: audioUrl
+                            });
+                         } catch (e) {
+                             console.error("Failed to process audio for event", event.id, e);
+                         }
+                     });
+    
+                     if (newItems.length > 0) {
+                        setQueue(prev => {
+                            const playing = prev.find(i => i.status === AudioStatus.PLAYING);
+                            const waiting = prev.filter(i => i.status !== AudioStatus.PLAYING);
+                            
+                            // Priority Logic
+                            const importantKeywords = ['Goal', 'Penalty', 'Red Card', 'Yellow Card', 'VAR'];
+                            const priorityItems = newItems.filter(i => importantKeywords.some(k => i.description?.includes(k)));
+                            const normalItems = newItems.filter(i => !importantKeywords.some(k => i.description?.includes(k)));
+                            
+                            let updatedQueue = [...prev];
+                            const playingIndex = updatedQueue.findIndex(i => i.status === AudioStatus.PLAYING);
+                            
+                            if (priorityItems.length > 0) {
+                                 if (!currentSettings.autoPlay) {
+                                    const newSettings = { ...currentSettings, autoPlay: true };
+                                    setSettings(newSettings);
+                                    localStorage.setItem('ai_livestream_settings', JSON.stringify(newSettings));
+                                 }
+                                 
+                                 if (playingIndex !== -1) {
+                                     updatedQueue.splice(playingIndex + 1, 0, ...priorityItems);
+                                 } else {
+                                     priorityItems[0].status = AudioStatus.PLAYING;
+                                     updatedQueue = [...priorityItems, ...updatedQueue];
+                                 }
+                                 updatedQueue = [...updatedQueue, ...normalItems];
+                            } else {
+                                 updatedQueue = [...updatedQueue, ...newItems];
+                            }
+    
+                            const isPlayingNow = updatedQueue.some(i => i.status === AudioStatus.PLAYING);
+                            if (!isPlayingNow && currentSettings.autoPlay) {
+                                const nextToPlay = updatedQueue.find(i => i.status === AudioStatus.QUEUED);
+                                if (nextToPlay) {
+                                    nextToPlay.status = AudioStatus.PLAYING;
+                                }
+                            }
+                            return updatedQueue;
                         });
-                     } catch (e) {
-                         console.error("Failed to process audio for event", event.id, e);
                      }
-                 });
-
-                 if (newItems.length > 0) {
-                    setQueue(prev => {
-                        const playing = prev.find(i => i.status === AudioStatus.PLAYING);
-                        const waiting = prev.filter(i => i.status !== AudioStatus.PLAYING);
-                        
-                        // Priority Logic: Insert "Important" events at the TOP of the waiting list
-                        const importantKeywords = ['Goal', 'Penalty', 'Red Card', 'Yellow Card', 'VAR'];
-                        const priorityItems = newItems.filter(i => importantKeywords.some(k => i.description?.includes(k)));
-                        const normalItems = newItems.filter(i => !importantKeywords.some(k => i.description?.includes(k)));
-                        
-                        let updatedQueue = [...prev];
-                        const playingIndex = updatedQueue.findIndex(i => i.status === AudioStatus.PLAYING);
-                        
-                        if (priorityItems.length > 0) {
-                             if (!settings.autoPlay) {
-                                // Force AutoPlay for important events
-                                const newSettings = { ...settings, autoPlay: true };
-                                setSettings(newSettings);
-                                localStorage.setItem('ai_livestream_settings', JSON.stringify(newSettings));
-                             }
-                             
-                             // Insert Priority Items at the very top of the "Wait list"
-                             if (playingIndex !== -1) {
-                                 // Insert after current playing
-                                 updatedQueue.splice(playingIndex + 1, 0, ...priorityItems);
-                             } else {
-                                 // Insert at top and start playing first one
-                                 priorityItems[0].status = AudioStatus.PLAYING;
-                                 updatedQueue = [...priorityItems, ...updatedQueue];
-                             }
-                             
-                             // Append normal items to end (or sorted position)
-                             updatedQueue = [...updatedQueue, ...normalItems];
-                             
-                        } else {
-                             // Standard append
-                             updatedQueue = [...updatedQueue, ...newItems];
-                        }
-
-                        // Auto-play logic if nothing is playing (and didn't start above)
-                        const isPlayingNow = updatedQueue.some(i => i.status === AudioStatus.PLAYING);
-                        if (!isPlayingNow && settings.autoPlay) {
-                            const nextToPlay = updatedQueue.find(i => i.status === AudioStatus.QUEUED);
-                            if (nextToPlay) {
-                                nextToPlay.status = AudioStatus.PLAYING;
-                            }
-                        }
-                        return updatedQueue;
-                    });
-                 }
+                  }
+                  
+                  setStatus(prev => ({ ...prev, n8nConnection: true }));
+                  
+                  // Attempt to update Match Time if available in response (Fix for "Not Realtime")
+                  // Assuming n8n returns 'timeElapsed' at root or inside stats
+                  const newTime = data.timeElapsed;
+                  if (typeof newTime === 'number' && currentSettings.matchDetails) {
+                       if (currentSettings.matchDetails.status.elapsed !== newTime) {
+                            setSettings(prev => ({
+                                ...prev,
+                                matchDetails: {
+                                    ...prev.matchDetails!,
+                                    status: {
+                                        ...prev.matchDetails!.status,
+                                        elapsed: newTime
+                                    }
+                                }
+                            }));
+                       }
+                  }
               }
-              
-              setStatus(prev => ({ ...prev, n8nConnection: true }));
-
-          } catch (error) {
-              console.error("N8N Poll Connection Failed:", error);
-              setStatus(prev => ({ ...prev, n8nConnection: false }));
+    
+          } catch (error: any) {
+              if (error.name !== 'AbortError') {
+                   console.error("N8N Poll Connection Failed:", error);
+                   if (isMounted) setStatus(prev => ({ ...prev, n8nConnection: false }));
+              }
+          } finally {
+              if (isMounted) {
+                  // Poll again in 1 second (Faster polling)
+                  timeoutId = setTimeout(pollN8N, 1000);
+              }
           }
       };
 
-      const interval = setInterval(pollN8N, settings.pollInterval);
-      
-      // Trigger immediately on mount/change
       pollN8N();
 
-      return () => clearInterval(interval);
-  }, [isStarted, settings]);
+      return () => {
+          isMounted = false;
+          clearTimeout(timeoutId);
+      };
+  }, [isStarted]); // Only restart if started state changes
 
   // -------------------------------------------------------------------------
   // MANUAL OVERRIDE (Drag & Drop)
