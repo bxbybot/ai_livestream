@@ -68,31 +68,48 @@ const MatchSearchModal: React.FC<MatchSearchModalProps> = ({
   const fetchLiveMatches = async () => {
     setLoading(true);
     setError('');
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
     try {
+        // Use Local Date to ensure we get today's matches for the user
         const today = new Date();
-        const dateString = today.toISOString().split('T')[0];
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const dateString = `${year}-${month}-${day}`;
         
         const res = await fetch(`https://v3.football.api-sports.io/fixtures?date=${dateString}`, {
             headers: {
                 "x-rapidapi-key": apiKey,
                 "x-rapidapi-host": "v3.football.api-sports.io"
-            }
+            },
+            signal: controller.signal
         });
         
+        clearTimeout(timeoutId);
+
         if (!res.ok) throw new Error(`API Error: ${res.status}`);
         
         const data = await res.json();
         
         if (data.errors && Object.keys(data.errors).length > 0) {
-             throw new Error(JSON.stringify(data.errors));
+             // Handle specific API errors gracefully
+             const errorMsg = Object.values(data.errors).join(', ');
+             throw new Error(errorMsg || "API Error");
         }
         
         let fetchedMatches: Match[] = data.response || [];
         setMatches(fetchedMatches);
         
     } catch (err: any) {
-        console.error(err);
-        setError(err.message || "Failed to fetch matches from API-Football");
+        if (err.name !== 'AbortError') {
+            console.error(err);
+            setError(err.message || "Failed to fetch matches from API-Football");
+        } else {
+            setError("Request timed out. Please check your connection.");
+        }
     } finally {
         setLoading(false);
     }
@@ -101,13 +118,25 @@ const MatchSearchModal: React.FC<MatchSearchModalProps> = ({
   const fetchSportmonksMatches = async () => {
     setLoading(true);
     setError('');
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
     try {
+        // Use Local Date
         const today = new Date();
-        const dateString = today.toISOString().split('T')[0];
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const dateString = `${year}-${month}-${day}`;
         
         // Sportmonks V3
-        const res = await fetch(`https://api.sportmonks.com/v3/football/fixtures/date/${dateString}?api_token=${sportmonksKey}&include=participants;league.country;state;scores`);
+        const res = await fetch(`https://api.sportmonks.com/v3/football/fixtures/date/${dateString}?api_token=${sportmonksKey}&include=participants;league.country;state;scores`, {
+             signal: controller.signal
+        });
         
+        clearTimeout(timeoutId);
+
         if (!res.ok) throw new Error(`Sportmonks API Error: ${res.status}`);
         
         const data = await res.json();
@@ -170,8 +199,12 @@ const MatchSearchModal: React.FC<MatchSearchModalProps> = ({
         setMatches(fetchedMatches);
 
     } catch (err: any) {
-        console.error(err);
-        setError(err.message || "Failed to fetch matches from Sportmonks");
+        if (err.name !== 'AbortError') {
+            console.error(err);
+            setError(err.message || "Failed to fetch matches from Sportmonks");
+        } else {
+             setError("Request timed out. Please check your connection.");
+        }
     } finally {
         setLoading(false);
     }
@@ -265,6 +298,13 @@ const MatchSearchModal: React.FC<MatchSearchModalProps> = ({
             <div className="flex items-center gap-2 text-white font-bold">
                 <div className={`w-2 h-2 rounded-full ${loading ? 'bg-yellow-500' : 'bg-red-500'} animate-pulse`}></div>
                 {dataProvider === 'sportmonks' ? 'SPORTMONKS' : 'API-FOOTBALL'} MATCHES ({matches.length})
+                <button 
+                    onClick={() => dataProvider === 'sportmonks' ? fetchSportmonksMatches() : fetchLiveMatches()}
+                    className="ml-2 p-1 hover:bg-gray-800 rounded-full text-gray-400 hover:text-white transition-colors"
+                    title="Refresh Matches"
+                >
+                    <Search className="w-3 h-3" />
+                </button>
             </div>
             <button onClick={onClose} className="text-gray-400 hover:text-white">&times;</button>
         </div>
