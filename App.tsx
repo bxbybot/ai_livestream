@@ -535,12 +535,17 @@ const App: React.FC = () => {
         matchId: match.fixture.id.toString(),
         liveMatchUrl: autoUrl,
         matchDetails: details,
-        // Remove override so it respects current settings (or provider passed via match context if we added that to Match)
-        // BUT: Since MatchSearchModal knows the provider, and App settings knows it, we don't need to force it here.
-        // The user already selected provider in settings to SEE the modal with correct data.
     };
     saveSettings(newSettings);
     setShowSearch(false);
+
+    // FORCE IMMEDIATE POLL TRIGGER
+    // Reset Poll Count to 0 so next poll is #1 (Triggers API Call)
+    pollCountRef.current = 0; 
+    // Note: The useEffect hook for pollN8N will detect the settings change and 
+    // naturally restart the polling loop or continue it with new settings.
+    // However, to be instantaneous, we rely on the fast polling interval (1s) 
+    // and the reset of pollCountRef ensuring the next hit is an API Call.
   };
 
   const handleResetMatch = () => {
