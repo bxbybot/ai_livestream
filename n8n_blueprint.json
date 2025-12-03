@@ -1,5 +1,5 @@
 {
-  "name": "AI Livestream Director (Smart Poll)",
+  "name": "AI Livestream Director (Smart Poll) - Text Only",
   "nodes": [
     {
       "parameters": {
@@ -8,13 +8,13 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "webhook-trigger",
+      "id": "227aeae0-fa80-4494-81f1-8f959b14e9ea",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
       "position": [
-        -300,
-        -160
+        -2752,
+        624
       ],
       "webhookId": "37ce78d0-0069-486c-963b-3a1ec09ce2c5"
     },
@@ -29,13 +29,76 @@
           ]
         }
       },
-      "id": "check-chat-type",
+      "id": "f971d7fc-cda0-4f78-8409-bdec6519c7c2",
       "name": "Check Chat Type",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        -100,
-        -160
+        -2544,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://v3.football.api-sports.io/fixtures/events?fixture={{$node[\"Webhook\"].json.body.matchId}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-rapidapi-key",
+              "value": "={{$node[\"Webhook\"].json.body.keys.football}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "a1b2c3d4-chat-events-001",
+      "name": "Get Events Chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        -2336,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://v3.football.api-sports.io/fixtures/statistics?fixture={{$node[\"Webhook\"].json.body.matchId}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-rapidapi-key",
+              "value": "={{$node[\"Webhook\"].json.body.keys.football}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "a1b2c3d4-chat-stats-002",
+      "name": "Get Statistics Chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        -2128,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const events = $node[\"Get Events Chat\"].json.response || [];\nconst stats = $node[\"Get Statistics Chat\"].json.response || [];\n\n// Sort events by time (newest first)\nlet sortedEvents = [...events];\nif (sortedEvents.length > 0) {\n    sortedEvents.sort((a, b) => {\n        const timeA = (a.time?.elapsed || 0) + (a.time?.extra || 0);\n        const timeB = (b.time?.elapsed || 0) + (b.time?.extra || 0);\n        return timeB - timeA;\n    });\n}\n\nconst latestEvent = sortedEvents[0] || null;\n\nreturn {\n    json: {\n        data: latestEvent,\n        stats: stats,\n        hasEvent: !!latestEvent\n    }\n};"
+      },
+      "id": "a1b2c3d4-chat-check-003",
+      "name": "Check Event Chat",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        -1920,
+        304
       ]
     },
     {
@@ -57,16 +120,16 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"google/gemini-2.0-flash-001\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a football commentator interacting with live viewers. \\nPersona: {{$node[\"Webhook\"].json.body.persona}}\\nCurrent Game Context (if available): {{$node[\"Webhook\"].json.body.matchInfo || 'Unknown Match'}}\\nLast Known Stats: {{JSON.stringify($node[\"Webhook\"].json.body.lastStats || {})}}\\n\\nINSTRUCTIONS:\\n1. Answer the viewer's comment in Character (Thai Language).\\n2. Use the context (Score, Teams) if relevant to the question.\\n3. Keep it short (under 2 sentences), fun, and engaging.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Viewer Comment: {{$node[\"Webhook\"].json.body.userMessage}}\\nRespond to this viewer.\"\n    }\n  ]\n}",
+        "jsonBody": "={\n  \"model\": \"google/gemini-2.0-flash-001\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a football commentator interacting with live viewers. \\nPersona: {{$node[\"Webhook\"].json.body.persona}}\\nCurrent Game Context (if available): {{$node[\"Get Statistics Chat\"].json.response[0].team.name || 'Team A'}} vs {{$node[\"Get Statistics Chat\"].json.response[1].team.name || 'Team B'}} (Time: {{$node[\"Check Event Chat\"].json.data.time.elapsed || 0}}')\\nLast Known Event: {{$node[\"Check Event Chat\"].json.data.type || 'None'}} - {{$node[\"Check Event Chat\"].json.data.detail || 'None'}}\\n\\nINSTRUCTIONS:\\n1. Answer the viewer's comment in Character (Thai Language).\\n2. Use the context (Score, Teams) if relevant to the question.\\n3. Keep it short (under 2 sentences), fun, and engaging.\\n4. If the question is general football, answer generally.\\n5. IMPORTANT: Always respond with text. Do not return empty string.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Viewer Comment: {{$node[\"Webhook\"].json.body.userMessage}}\\nRespond to this viewer.\"\n    }\n  ]\n}",
         "options": {}
       },
-      "id": "ai-chat-responder",
+      "id": "5ed57a6a-1b7e-46a9-9b31-3f3fac85bbf4",
       "name": "AI Chat Responder",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
       "position": [
-        100,
-        -400
+        -1712,
+        304
       ]
     },
     {
@@ -80,13 +143,13 @@
           ]
         }
       },
-      "id": "check-provider",
+      "id": "6510be8e-ef00-42d0-a2f2-f09151e2da11",
       "name": "Check Provider",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        100,
-        -160
+        -2352,
+        624
       ]
     },
     {
@@ -103,41 +166,46 @@
         },
         "options": {}
       },
-      "id": "get-events",
+      "id": "fc2f5609-d220-460f-8941-ed4b8f42527c",
       "name": "Get Match Events",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
       "position": [
-        300,
-        -260
+        -2144,
+        528
       ]
     },
     {
       "parameters": {
         "url": "=https://api.sportmonks.com/v3/football/fixtures/{{$node[\"Webhook\"].json.body.matchId}}?include=events,statistics&api_token={{$node[\"Webhook\"].json.body.keys.sportmonks}}",
         "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {}
+          ]
+        },
         "options": {}
       },
-      "id": "get-sportmonks",
+      "id": "6c691cb8-a62b-4ba1-9ddb-b4b98718e9b5",
       "name": "Get Sportmonks Data",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
       "position": [
-        300,
-        160
+        -2144,
+        944
       ]
     },
     {
       "parameters": {
         "jsCode": "const response = $input.item.json.data;\nconst webhookData = $node[\"Webhook\"].json.body;\nconst lastEventId = webhookData.lastEventId;\nconst lastStats = webhookData.lastStats;\n\nif (!response) return { json: { hasUpdate: false } };\n\n// --- 1. Parse Events ---\nlet smEvents = response.events || [];\n// Sort: newest first (Sportmonks usually sends ordered, but let's ensure)\nsmEvents.sort((a, b) => b.id - a.id);\n\nlet hasNewEvent = false;\nlet latestEvent = null;\nlet uniqueId = null;\nlet eventDetail = null;\n\nif (smEvents.length > 0) {\n    latestEvent = smEvents[0];\n    uniqueId = `sm_event_${latestEvent.id}`;\n    \n    if (!lastEventId || lastEventId !== uniqueId) {\n        hasNewEvent = true;\n        eventDetail = {\n            type: latestEvent.type?.name || 'Event',\n            detail: `${latestEvent.player_name || 'Player'} (${latestEvent.minute}')`,\n            team: { name: latestEvent.team_id === response.participants[0].id ? response.participants[0].name : response.participants[1].name }\n        };\n    }\n}\n\n// --- 2. Parse Stats ---\nlet stats = response.statistics || [];\nlet team1 = stats.find(s => s.team_id === response.participants[0].id) || { statistics: [] };\nlet team2 = stats.find(s => s.team_id === response.participants[1].id) || { statistics: [] };\n\n// Format to match API-Football structure slightly for consistency\nconst formattedStats = [\n    { team: { id: response.participants[0].id, name: response.participants[0].name }, statistics: team1.statistics || [] },\n    { team: { id: response.participants[1].id, name: response.participants[1].name }, statistics: team2.statistics || [] }\n];\n\nlet hasStatsUpdate = false;\nlet statsDetail = \"\";\nlet updateType = \"\";\n\nif (!hasNewEvent && lastStats) {\n    // Check for simple stats changes (e.g. Shots, Corners)\n    // Note: Sportmonks structure might differ, simplified check here\n    // Assuming simple length check or specific field tracking for now\n    // Real implementation would need mapping specific Type Names from Sportmonks\n    hasStatsUpdate = JSON.stringify(formattedStats) !== JSON.stringify(lastStats);\n    if (hasStatsUpdate) {\n        updateType = 'GAME_FLOW';\n        statsDetail = \"Game stats updated\";\n    }\n}\n\nlet outputType = 'STATS';\nlet outputData = formattedStats;\nlet finalHasUpdate = hasNewEvent || hasStatsUpdate;\n\nif (hasNewEvent) {\n    outputType = 'EVENT';\n    outputData = eventDetail;\n} else if (hasStatsUpdate) {\n    outputType = 'GAME_FLOW';\n    outputData = { type: 'STATS_CHANGE', detail: statsDetail };\n}\n\nreturn {\n    json: {\n        hasUpdate: finalHasUpdate,\n        type: outputType,\n        data: outputData,\n        fullStats: formattedStats,\n        timeElapsed: response.time?.minute || 0,\n        uniqueId: hasNewEvent ? uniqueId : `sm_stats_${Date.now()}`,\n        isFiller: !finalHasUpdate,\n        ...webhookData\n    }\n};"
       },
-      "id": "process-sportmonks",
+      "id": "35bc5fa7-9a94-4592-9bca-9385928ef903",
       "name": "Process Sportmonks",
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
-        500,
-        160
+        -1952,
+        944
       ]
     },
     {
@@ -151,26 +219,26 @@
           ]
         }
       },
-      "id": "sm-update-found",
+      "id": "95bf13d6-7007-4625-aa0c-4d8d9c34486a",
       "name": "SM Update Found?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        700,
-        160
+        -1744,
+        944
       ]
     },
     {
       "parameters": {
         "jsCode": "const webhookData = $node[\"Webhook\"].json.body;\nconst lastEventId = webhookData.lastEventId;\nconst events = $input.item.json.response;\n\nif (events) {\n    events.sort((a, b) => (b.time.elapsed + (b.time.extra || 0)) - (a.time.elapsed + (a.time.extra || 0)));\n}\n\nlet hasNewEvent = false;\nlet latestEvent = null;\nlet uniqueId = null;\n\nif (events && events.length > 0) {\n    latestEvent = events[0];\n    uniqueId = `${latestEvent.time.elapsed}_${latestEvent.team.id}_${latestEvent.type}`;\n    if (!lastEventId || lastEventId !== uniqueId) {\n        hasNewEvent = true;\n    }\n}\n\nreturn {\n    json: {\n        hasNewEvent,\n        type: 'EVENT',\n        data: latestEvent,\n        uniqueId,\n        ...webhookData\n    }\n};"
       },
-      "id": "check-new-event",
+      "id": "1a5543f8-db34-4925-a4e2-3af6c0649000",
       "name": "Check New Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
-        500,
-        -260
+        -1952,
+        528
       ]
     },
     {
@@ -184,13 +252,13 @@
           ]
         }
       },
-      "id": "new-event-found",
+      "id": "bed6ff63-b062-4e1d-bd85-db5cec2d41d7",
       "name": "New Event Found?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        700,
-        -260
+        -1744,
+        528
       ]
     },
     {
@@ -207,26 +275,26 @@
         },
         "options": {}
       },
-      "id": "get-stats",
+      "id": "9d7411a3-9b01-49eb-9170-28c93f3d694c",
       "name": "Get Statistics",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
       "position": [
-        700,
-        -60
+        -1744,
+        736
       ]
     },
     {
       "parameters": {
         "jsCode": "const stats = $input.item.json.response;\nconst lastStats = $node[\"Webhook\"].json.body.lastStats;\nconst webhookData = $node[\"Webhook\"].json.body;\n\n// Get time from Check New Event node\nconst lastEventNode = $node[\"Check New Event\"];\nconst lastEvent = lastEventNode ? lastEventNode.json.data : null;\nconst timeElapsed = lastEvent ? (lastEvent.time.elapsed + (lastEvent.time.extra || 0)) : 0;\n\nif (!stats || stats.length < 2) return { json: { hasUpdate: false } };\n\nfunction getStat(teamStats, typeName) {\n    const stat = teamStats.statistics.find(s => s.type === typeName);\n    return stat ? (stat.value || 0) : 0;\n}\n\nconst team1 = stats[0];\nconst team2 = stats[1];\n\nlet updateType = \"\";\nlet updateDetail = \"\";\nlet hasUpdate = false;\nlet isFiller = false;\nlet fillerType = \"\";\nlet type = 'STATS';\nlet outputData = stats;\n\nif (lastStats) {\n  const lastTeam1 = lastStats[0];\n  const lastTeam2 = lastStats[1];\n\n  // 1. Corner Kicks\n  const t1Corner = getStat(team1, \"Corner Kicks\");\n  const lastT1Corner = getStat(lastTeam1, \"Corner Kicks\");\n  const t2Corner = getStat(team2, \"Corner Kicks\");\n  const lastT2Corner = getStat(lastTeam2, \"Corner Kicks\");\n\n  if (t1Corner > lastT1Corner) {\n      updateType = \"CORNER\";\n      updateDetail = `เตะมุมของทางฝั่ง ${team1.team.name}`;\n  } else if (t2Corner > lastT2Corner) {\n      updateType = \"CORNER\";\n      updateDetail = `เตะมุมของทางฝั่ง ${team2.team.name}`;\n  }\n\n  // 2. Shots on Goal\n  if (!updateType) {\n      const t1Shot = getStat(team1, \"Shots on Goal\");\n      const lastT1Shot = getStat(lastTeam1, \"Shots on Goal\");\n      const t2Shot = getStat(team2, \"Shots on Goal\");\n      const lastT2Shot = getStat(lastTeam2, \"Shots on Goal\");\n\n      if (t1Shot > lastT1Shot) {\n          updateType = \"SHOT\";\n          updateDetail = `จังหวะยิงเข้ากรอบของ ${team1.team.name}!`;\n      } else if (t2Shot > lastT2Shot) {\n          updateType = \"SHOT\";\n          updateDetail = `จังหวะยิงเข้ากรอบของ ${team2.team.name}!`;\n      }\n  }\n}\n\nif (updateType) {\n    hasUpdate = true;\n    type = 'GAME_FLOW';\n    outputData = { type: updateType, detail: updateDetail };\n} else {\n    // Logic for Filler/Analysis\n    // Always consider speaking if no update (polling interval)\n    isFiller = true;\n    \n    // Randomly decide between 'Game Flow' (Current possession/style) and 'History' (Deep analysis)\n    // 60% Flow (Generic), 40% History\n    if (Math.random() > 0.6) {\n        fillerType = 'HISTORY';\n    } else {\n        fillerType = 'FLOW';\n        type = 'GENERIC_FLOW';\n        const t1Possession = getStat(team1, \"Ball Possession\") || \"50%\";\n        const t2Possession = getStat(team2, \"Ball Possession\") || \"50%\";\n        outputData = { \n           type: 'POSSESSION',\n           detail: `${team1.team.name} (${t1Possession}) vs ${team2.team.name} (${t2Possession})`\n        };\n    }\n}\n\nreturn {\n  json: {\n    hasUpdate,\n    isFiller,\n    fillerType,\n    type,\n    data: outputData,\n    fullStats: stats,\n    timeElapsed,\n    uniqueId: `stats_${Date.now()}`,\n    ...webhookData\n  }\n};"
       },
-      "id": "check-stats",
+      "id": "12a1f1e8-3db9-4012-bb85-cf9f6a06632f",
       "name": "Check Stats Update",
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
-        900,
-        -60
+        -1536,
+        736
       ]
     },
     {
@@ -240,13 +308,13 @@
           ]
         }
       },
-      "id": "stats-update",
+      "id": "674447d4-66e9-49b7-bc9b-289f536cee09",
       "name": "Stats Update?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        1100,
-        -60
+        -1344,
+        736
       ]
     },
     {
@@ -260,19 +328,19 @@
           ]
         }
       },
-      "id": "check-skip-api",
+      "id": "3bbcf0a3-6639-4e44-abec-07d92716cc85",
       "name": "Trigger Filler?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        1300,
-        40
+        -1136,
+        832
       ]
     },
     {
       "parameters": {
         "conditions": {
-          "boolean": [
+          "string": [
             {
               "value1": "={{$json.fillerType}}",
               "value2": "HISTORY"
@@ -280,13 +348,13 @@
           ]
         }
       },
-      "id": "check-filler-type",
+      "id": "dec0c1e3-a172-4297-a20f-4fb7cc4506c4",
       "name": "Check Filler Type",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        1500,
-        140
+        -912,
+        896
       ]
     },
     {
@@ -303,13 +371,13 @@
         },
         "options": {}
       },
-      "id": "get-h2h",
+      "id": "d2611eaa-8483-494f-a4d0-b5e6b10a6d9e",
       "name": "Get H2H Data",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
       "position": [
-        1700,
-        240
+        -736,
+        1024
       ]
     },
     {
@@ -331,16 +399,16 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"google/gemini-2.0-flash-001\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a football commentator. Persona: {{$json.persona}}\\nSpeak ONLY in Thai. Keep it natural and engaging.\\n\\nGUIDELINES:\\n1. EVENTS: Analyze the event. Mention implication for the game.\\n2. GAME FLOW: Describe the atmosphere/possession. Who is pressing?\\n3. CRITICAL TIME CHECK: Current Time is {{$json.timeElapsed}} minutes.\\n   - IF Time < 45: DO NOT mention Half Time, Break, or Second Half.\\n   - IF Time >= 45: You can mention Half Time if appropriate.\\n4. Stick to facts. MINIMIZE Call to Action.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"{{ $json.type === 'EVENT' ? `EVENT: ${$json.data.type} by ${$json.data.team.name}. Detail: ${$json.data.detail}. React to this event!` : ($json.type === 'GAME_FLOW' ? `GAME FLOW: ${$json.data.detail}. Describe the excitement of this moment! Current time: ${$json.timeElapsed} min.` : `NO MAJOR EVENT. Game Flow Update: ${$json.data.detail}. Describe the game momentum briefly. Who looks stronger?`) }}\"\n    }\n  ]\n}",
+        "jsonBody": "={\n  \"model\": \"google/gemini-2.0-flash-001\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a football commentator. Persona: {{$json.persona}}\\nSpeak ONLY in Thai. Keep it natural and engaging.\\n\\nGUIDELINES:\\n1. EVENTS: Analyze the event. Mention implication for the game.\\n2. GAME FLOW: Describe the atmosphere/possession. Who is pressing?\\n3. CRITICAL TIME CHECK: Current Time is {{$json.timeElapsed}} minutes.\\n   - IF Time < 45: DO NOT mention Half Time, Break, or Second Half.\\n   - IF Time >= 45: You can mention Half Time if appropriate.\\n4. Stick to facts. MINIMIZE Call to Action.\\n5. IMPORTANT: Always respond with commentary text. Do not return empty string.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"{{ $json.type === 'EVENT' ? `EVENT: ${$json.data.type} by ${$json.data.team.name}. Detail: ${$json.data.detail}. React to this event!` : ($json.type === 'GAME_FLOW' ? `GAME FLOW: ${$json.data.detail}. Describe the excitement of this moment! Current time: ${$json.timeElapsed} min.` : `NO MAJOR EVENT. Game Flow Update: ${$json.data.detail}. Describe the game momentum briefly. Who looks stronger?`) }}\"\n    }\n  ]\n}",
         "options": {}
       },
-      "id": "ai-writer",
+      "id": "218f61ab-5414-4e28-9a32-eedb59d2d684",
       "name": "AI Script Writer",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
       "position": [
-        1500,
-        -100
+        -656,
+        768
       ]
     },
     {
@@ -362,89 +430,92 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"google/gemini-2.0-flash-001\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a football commentator. Persona: {{$node[\"Webhook\"].json.body.persona}}\\nMatch: {{$node[\"Get Statistics\"].json.response[0].team.name}} vs {{$node[\"Get Statistics\"].json.response[1].team.name}}.\\nSpeak ONLY in Thai. \\nTASK: Provide deep analysis or historical fact.\\n1. Look at H2H data or Stats.\\n2. Pick ONE real historical match or fact.\\n3. Tell a short story about it or analyze the team's past performance.\\n4. DO NOT invent facts. Use the data provided.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Context:\\nFull Stats: {{JSON.stringify($node[\"Check Stats Update\"].json.fullStats)}}\\nH2H Data: {{JSON.stringify($json.response || [])}}\\n\\nGenerate a historical or analytical commentary piece.\"\n    }\n  ]\n}",
+        "jsonBody": "={\n  \"model\": \"google/gemini-2.0-flash-001\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a football commentator. Persona: {{$node[\"Webhook\"].json.body.persona}}\\nMatch: {{$node[\"Get Statistics\"].json.response[0].team.name}} vs {{$node[\"Get Statistics\"].json.response[1].team.name}}.\\nSpeak ONLY in Thai. \\nTASK: Provide deep analysis or historical fact.\\n1. Look at H2H data or Stats.\\n2. Pick ONE real historical match or fact.\\n3. Tell a short story about it or analyze the team's past performance.\\n4. DO NOT invent facts. Use the data provided.\\n5. IMPORTANT: Always respond with commentary text. Do not return empty string.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Context:\\nFull Stats: {{JSON.stringify($node[\"Check Stats Update\"].json.fullStats)}}\\nH2H Data: {{JSON.stringify($json.response || [])}}\\n\\nGenerate a historical or analytical commentary piece.\"\n    }\n  ]\n}",
         "options": {}
       },
-      "id": "ai-filler",
+      "id": "e8f6b535-f099-4d2c-994e-aa499f3151fd",
       "name": "AI Filler Writer",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
       "position": [
-        1700,
-        400
+        -736,
+        1184
       ]
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://api.elevenlabs.io/v1/text-to-speech/TX3LPaxmHKxFdv7VOQHJ/stream",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "xi-api-key",
-              "value": "={{$node[\"Webhook\"].json.body.keys.elevenLabs}}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"text\": \"{{ $json.choices[0].message.content.trim().replace(/\\\"/g, '\\\\\\\"') }}\",\n  \"model_id\": \"eleven_multilingual_v2\",\n  \"output_format\": \"mp3_44100_128\",\n  \"voice_settings\": {\n    \"stability\": 0.5,\n    \"similarity_boost\": 0.8,\n    \"style\": 0,\n    \"use_speaker_boost\": true\n  }\n}",
-        "options": {}
+        "jsCode": "// === Helper to read node safely ===\nfunction safeJson(nodeName) {\n  try {\n    if ($node[nodeName] && $node[nodeName].length > 0) {\n        return $node[nodeName][0].json;\n    }\n    // Fallback for direct execution or other structures\n    if ($node[nodeName] && $node[nodeName].json) {\n        return $node[nodeName].json;\n    }\n    return undefined;\n  } catch (e) {\n    return undefined;\n  }\n}\n\n// === Binary / Audio ===\n// ElevenLabs Removed - No Audio\nconst base64String = \"\";\n\n// === AI Text Source ===\nconst aiScriptJson  = safeJson(\"AI Script Writer\");\nconst aiFillerJson  = safeJson(\"AI Filler Writer\");\nconst aiChatJson    = safeJson(\"AI Chat Responder\");\n\nconst aiNode = aiScriptJson || aiFillerJson || aiChatJson;\nlet aiSource = \"None\";\n\nif (aiScriptJson) aiSource = \"AI Script Writer\";\nif (aiFillerJson) aiSource = \"AI Filler Writer\";\nif (aiChatJson) aiSource = \"AI Chat Responder\";\n\nconst aiText = aiNode?.choices?.[0]?.message?.content || \"No content generated\";\n\n// === Default ID & Description ===\nlet uniqueId = `text_${Date.now()}`;\nlet description = \"Commentary\";\n\n// === Inputs from Logic Nodes ===\nconst webhookJson     = safeJson(\"Webhook\");\nconst checkChatNode   = safeJson(\"Check Chat Type\"); // Note: Check Chat Type is IF node\nconst checkEventJson  = safeJson(\"Check New Event\");\nconst statsJson       = safeJson(\"Check Stats Update\");\nconst smJson          = safeJson(\"Process Sportmonks\");\n\n// === Chat Logic ===\n// Check if the Webhook input itself had type='CHAT'\nif (webhookJson && webhookJson.body && webhookJson.body.type === 'CHAT') {\n  uniqueId = `chat_${Date.now()}`;\n  description = \"Viewer Reply\";\n}\n\n// === Sportmonks Logic ===\nelse if (smJson && smJson.hasUpdate) {\n  uniqueId = smJson.uniqueId;\n  if (smJson.type === 'EVENT') {\n      description = smJson.data.type + \" - \" + smJson.data.team.name;\n  } else {\n      description = smJson.data.detail || \"Game Update\";\n  }\n}\n\n// === API-Football Event Logic ===\nelse if (checkEventJson?.hasNewEvent) {\n  const eventData = checkEventJson;\n  uniqueId = eventData.uniqueId;\n  description =\n    (eventData.data?.type || \"Event\") +\n    \" - \" +\n    (eventData.data?.team?.name || \"\");\n}\n\n// === API-Football Stats / Filler Logic ===\nelse if (statsJson) {\n  uniqueId = statsJson.uniqueId;\n\n  if (statsJson.fillerType === \"HISTORY\") {\n    description = \"Historical Analysis\";\n  } else if (\n    statsJson.type === \"GAME_FLOW\" ||\n    statsJson.type === \"GENERIC_FLOW\"\n  ) {\n    description = statsJson.data?.detail || \"Game Flow\";\n  }\n}\n\n// === Return ===\nreturn {\n  json: {\n    events: [\n      {\n        id: uniqueId,\n        text: aiText,\n        description: description,\n        audioBase64: base64String,\n        debugSource: aiSource\n      }\n    ],\n    currentStats: statsJson?.data || smJson?.data,\n    debug: {\n        aiSource,\n        hasScript: !!aiScriptJson,\n        hasFiller: !!aiFillerJson,\n        hasChat: !!aiChatJson\n    }\n  }\n};\n"
       },
-      "id": "elevenlabs",
-      "name": "ElevenLabs TTS",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 3,
-      "position": [
-        1900,
-        -100
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "// === Helper to read node safely ===\nfunction safeJson(nodeName) {\n  try {\n    if ($node[nodeName] && $node[nodeName].length > 0) {\n        return $node[nodeName][0].json;\n    }\n    // Fallback for direct execution or other structures\n    if ($node[nodeName] && $node[nodeName].json) {\n        return $node[nodeName].json;\n    }\n    return undefined;\n  } catch (e) {\n    return undefined;\n  }\n}\n\n// === Binary / Audio ===\nconst binaryData = items[0].binary.data;\nconst base64String = binaryData.data;\n\n// === AI Text Source ===\nconst aiScriptJson  = safeJson(\"AI Script Writer\");\nconst aiFillerJson  = safeJson(\"AI Filler Writer\");\nconst aiChatJson    = safeJson(\"AI Chat Responder\");\n\nconst aiNode = aiScriptJson || aiFillerJson || aiChatJson;\n\nconst aiText = aiNode?.choices\n  ? aiNode.choices[0].message.content\n  : \"Audio generated\";\n\n// === Default ID & Description ===\nlet uniqueId = `audio_${Date.now()}`;\nlet description = \"Commentary\";\n\n// === Inputs from Logic Nodes ===\nconst webhookJson     = safeJson(\"Webhook\");\nconst checkChatNode   = safeJson(\"Check Chat Type\"); // Note: Check Chat Type is IF node\nconst checkEventJson  = safeJson(\"Check New Event\");\nconst statsJson       = safeJson(\"Check Stats Update\");\nconst smJson          = safeJson(\"Process Sportmonks\");\n\n// === Chat Logic ===\n// Check if the Webhook input itself had type='CHAT'\nif (webhookJson && webhookJson.body && webhookJson.body.type === 'CHAT') {\n  uniqueId = `chat_${Date.now()}`;\n  description = \"Viewer Reply\";\n}\n\n// === Sportmonks Logic ===\nelse if (smJson && smJson.hasUpdate) {\n  uniqueId = smJson.uniqueId;\n  if (smJson.type === 'EVENT') {\n      description = smJson.data.type + \" - \" + smJson.data.team.name;\n  } else {\n      description = smJson.data.detail || \"Game Update\";\n  }\n}\n\n// === API-Football Event Logic ===\nelse if (checkEventJson?.hasNewEvent) {\n  const eventData = checkEventJson;\n  uniqueId = eventData.uniqueId;\n  description =\n    (eventData.data?.type || \"Event\") +\n    \" - \" +\n    (eventData.data?.team?.name || \"\");\n}\n\n// === API-Football Stats / Filler Logic ===\nelse if (statsJson) {\n  uniqueId = statsJson.uniqueId;\n\n  if (statsJson.fillerType === \"HISTORY\") {\n    description = \"Historical Analysis\";\n  } else if (\n    statsJson.type === \"GAME_FLOW\" ||\n    statsJson.type === \"GENERIC_FLOW\"\n  ) {\n    description = statsJson.data?.detail || \"Game Flow\";\n  }\n}\n\n// === Return ===\nreturn {\n  json: {\n    events: [\n      {\n        id: uniqueId,\n        text: aiText,\n        description: description,\n        audioBase64: base64String,\n      },\n    ],\n    currentStats: statsJson?.data || smJson?.data,\n  },\n};\n"
-      },
-      "id": "format-response",
+      "id": "0ba93a74-9cf8-48c5-ae01-f6355c0fc8dd",
       "name": "Format Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
-        2100,
-        -100
+        -336,
+        688
       ]
     },
     {
       "parameters": {
         "options": {}
       },
-      "id": "respond-webhook",
+      "id": "80bd7859-49e9-4c78-ad23-fa1145073047",
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        2300,
-        -100
+        -144,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Random Filler Logic when No Update\n// 20% Chance to generate filler anyway\nconst shouldGenerate = Math.random() > 0.8;\n\nif (shouldGenerate) {\n    return {\n        json: {\n            isFiller: true,\n            fillerType: Math.random() > 0.5 ? 'HISTORY' : 'FLOW', // Randomize filler type\n            ...$node[\"Webhook\"].json.body\n        }\n    };\n}\n\nreturn { json: { hasUpdate: false } };"
+      },
+      "id": "99b27a68-6bb2-497d-9622-761a34f8076e",
+      "name": "Random Filler Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        -1136,
+        1216
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.isFiller}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "5f0e4ae9-935a-47ea-8d97-8a71dee74742",
+      "name": "Should Gen Filler?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -928,
+        1232
       ]
     },
     {
       "parameters": {
         "jsCode": "return { json: { events: [] } };"
       },
-      "id": "no-update-response",
+      "id": "5f8c10fb-d71e-4f73-806d-e43043c9ddf3",
       "name": "No Update",
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
-        1300,
-        500
+        -896,
+        1600
       ]
     }
   ],
+  "pinData": {},
   "connections": {
     "Webhook": {
       "main": [
@@ -461,7 +532,7 @@
       "main": [
         [
           {
-            "node": "AI Chat Responder",
+            "node": "Get Events Chat",
             "type": "main",
             "index": 0
           }
@@ -469,6 +540,39 @@
         [
           {
             "node": "Check Provider",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Events Chat": {
+      "main": [
+        [
+          {
+            "node": "Get Statistics Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Statistics Chat": {
+      "main": [
+        [
+          {
+            "node": "Check Event Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Event Chat": {
+      "main": [
+        [
+          {
+            "node": "AI Chat Responder",
             "type": "main",
             "index": 0
           }
@@ -526,7 +630,7 @@
         ],
         [
           {
-            "node": "No Update",
+            "node": "Random Filler Check",
             "type": "main",
             "index": 0
           }
@@ -537,7 +641,7 @@
       "main": [
         [
           {
-            "node": "ElevenLabs TTS",
+            "node": "Format Response",
             "type": "main",
             "index": 0
           }
@@ -635,7 +739,7 @@
         ],
         [
           {
-            "node": "No Update",
+            "node": "Random Filler Check",
             "type": "main",
             "index": 0
           }
@@ -675,7 +779,7 @@
       "main": [
         [
           {
-            "node": "ElevenLabs TTS",
+            "node": "Format Response",
             "type": "main",
             "index": 0
           }
@@ -683,17 +787,6 @@
       ]
     },
     "AI Script Writer": {
-      "main": [
-        [
-          {
-            "node": "ElevenLabs TTS",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "ElevenLabs TTS": {
       "main": [
         [
           {
@@ -715,6 +808,35 @@
         ]
       ]
     },
+    "Random Filler Check": {
+      "main": [
+        [
+          {
+            "node": "Should Gen Filler?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Gen Filler?": {
+      "main": [
+        [
+          {
+            "node": "Check Filler Type",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "No Update": {
       "main": [
         [
@@ -726,5 +848,15 @@
         ]
       ]
     }
-  }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "c0e7f871-718f-465b-b15d-d3dd25c2b6e7",
+  "meta": {
+    "instanceId": "725e0f4dffd0a89f4a0549d60ee205990968d3e95ef501acd617be3a1155ef10"
+  },
+  "id": "MB4UWHyc8CKLZjbl",
+  "tags": []
 }

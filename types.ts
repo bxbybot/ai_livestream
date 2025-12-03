@@ -40,7 +40,8 @@ export interface AudioItem {
   duration: string;
   timestamp: Date;
   status: AudioStatus;
-  description?: string; // e.g., "Goal - Manchester United"
+  description?: string; // e.g., "Goal - Manchester United" (Short summary)
+  text?: string;        // Full commentary text
   audioUrl?: string;    // Blob URL or Remote URL for playback
 }
 

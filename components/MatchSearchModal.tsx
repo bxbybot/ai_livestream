@@ -80,7 +80,10 @@ const MatchSearchModal: React.FC<MatchSearchModalProps> = ({
         const day = String(today.getDate()).padStart(2, '0');
         const dateString = `${year}-${month}-${day}`;
         
-        const res = await fetch(`https://v3.football.api-sports.io/fixtures?date=${dateString}`, {
+        // Get User's Timezone
+        const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+        const res = await fetch(`https://v3.football.api-sports.io/fixtures?date=${dateString}&timezone=${userTimezone}`, {
             headers: {
                 "x-rapidapi-key": apiKey,
                 "x-rapidapi-host": "v3.football.api-sports.io"

@@ -6,6 +6,7 @@ import ControlPanel from './components/ControlPanel';
 import SettingsModal from './components/SettingsModal';
 import MatchSearchModal from './components/MatchSearchModal';
 import StartOverlay from './components/StartOverlay';
+import TextPopup from './components/TextPopup';
 import { AudioItem, AudioSource, AudioStatus, SystemStatus, AppSettings, MatchDetails } from './types';
 
 const App: React.FC = () => {
@@ -77,11 +78,10 @@ const App: React.FC = () => {
         n8nConnection: !!settings.n8nUrl, 
     }));
     
-    // Create Audio Element
+    // Create Audio Element (Keeping it for manual plays or legacy, though we use Popup primarily now)
     if (!audioRef.current) {
         audioRef.current = new Audio();
-        // Add event listener for when audio finishes
-        audioRef.current.onended = handleAudioEnded;
+        // We remove the onended handler since we are using manual close for the popup
     }
   };
 
@@ -99,9 +99,9 @@ const App: React.FC = () => {
   };
 
   // -------------------------------------------------------------------------
-  // AUDIO ENGINE: PLAYBACK LOGIC
+  // QUEUE MANAGEMENT: ADVANCE TO NEXT ITEM
   // -------------------------------------------------------------------------
-  const handleAudioEnded = () => {
+  const handleItemFinished = () => {
     setQueue(prev => {
         const currentPlayingIndex = prev.findIndex(i => i.status === AudioStatus.PLAYING);
         if (currentPlayingIndex === -1) return prev;
@@ -110,7 +110,7 @@ const App: React.FC = () => {
         // Mark current as completed
         newQueue[currentPlayingIndex] = { ...newQueue[currentPlayingIndex], status: AudioStatus.COMPLETED };
         
-        // Remove completed items to keep queue clean
+        // Remove completed items to keep queue clean (optional, but good for performance)
         newQueue.splice(currentPlayingIndex, 1);
 
         // Find next item to play
@@ -122,39 +122,41 @@ const App: React.FC = () => {
     });
   };
 
-  // Watch for changes in the queue to trigger playback
+  // Watch for changes in the queue - handles Manual Playback vs Text Popup logic
   useEffect(() => {
-    if (!audioRef.current || !isStarted) return;
+    if (!isStarted || !audioRef.current) return;
 
     const currentItem = queue.find(i => i.status === AudioStatus.PLAYING);
     
-    if (currentItem && currentItem.audioUrl) {
-        // If the audio source is different or paused, play it
-        if (!audioRef.current.src.includes(currentItem.audioUrl) && audioRef.current.src !== currentItem.audioUrl) {
-            audioRef.current.src = currentItem.audioUrl;
-            audioRef.current.volume = volume / 100;
-            
-            // ADDED DELAY: 500ms pause between records for natural feel
-            const playDelay = setTimeout(() => {
-                audioRef.current?.play().catch(e => console.error("Playback failed:", e));
-            }, 500);
-            
-            return () => clearTimeout(playDelay);
-
-        } else if (audioRef.current.paused && settings.autoPlay) {
-             // Resume if paused and autoplay is on
-             audioRef.current.play().catch(e => console.error("Playback failed:", e));
+    if (currentItem) {
+        if (currentItem.source === AudioSource.MANUAL && currentItem.audioUrl) {
+            // Play Manual Audio
+            if (!audioRef.current.src.includes(currentItem.audioUrl) && audioRef.current.src !== currentItem.audioUrl) {
+                audioRef.current.src = currentItem.audioUrl;
+                audioRef.current.volume = volume / 100;
+                audioRef.current.play().catch(e => console.error("Playback failed:", e));
+            }
+             // Ensure onended handles it
+             audioRef.current.onended = handleItemFinished;
+        } else {
+             // AI Text Popup Mode
+             console.log("Now presenting:", currentItem.description);
+             // Ensure audio is paused/cleared if it was playing
+             if (!audioRef.current.paused) {
+                 audioRef.current.pause();
+             }
+             // Remove onended because the popup close button handles it
+             audioRef.current.onended = null;
         }
     } else {
-
-        // Nothing playing, ensure audio is paused
+        // Nothing playing
         if (!audioRef.current.paused) {
-             // audioRef.current.pause(); 
+             audioRef.current.pause(); 
         }
     }
-  }, [queue, isStarted, volume, settings.autoPlay]);
+  }, [queue, isStarted, settings.autoPlay, volume]);
 
-  // Update volume in real-time
+  // Update volume in real-time (If we still use audio for manual override)
   useEffect(() => {
     if (audioRef.current) {
         audioRef.current.volume = volume / 100;
@@ -211,17 +213,17 @@ const App: React.FC = () => {
                            }
 
                            newDetails = {
-                                fixtureId: m.id,
-                                teams: {
-                                    home: { name: home?.name || 'Home', logo: home?.image_path || '' },
-                                    away: { name: away?.name || 'Away', logo: away?.image_path || '' }
-                                },
-                                goals: { home: hGoals, away: aGoals },
-                                league: { name: currentSettings.matchDetails?.league.name || 'Unknown' },
-                                status: {
-                                    elapsed: m.state?.id === 5 ? 90 : (m.state?.minute || 0),
-                                    short: m.state?.short_code || 'NS'
-                                }
+                               fixtureId: m.id,
+                               teams: {
+                                   home: { name: home?.name || 'Home', logo: home?.image_path || '' },
+                                   away: { name: away?.name || 'Away', logo: away?.image_path || '' }
+                               },
+                               goals: { home: hGoals, away: aGoals },
+                               league: { name: currentSettings.matchDetails?.league.name || 'Unknown' },
+                               status: {
+                                   elapsed: m.state?.id === 5 ? 90 : (m.state?.minute || 0),
+                                   short: m.state?.short_code || 'NS'
+                               }
                            };
                       }
                   }
@@ -319,11 +321,12 @@ const App: React.FC = () => {
                       lastStats: lastStatsRef.current,
                       persona: currentSettings.persona,
                       skipApi: !shouldCallApi, // Tell N8N to skip API call if filler time
+                      skipAudio: true, // NEW: Tell N8N to skip audio generation
                       dataProvider: currentSettings.dataProvider || 'api-football',
                       keys: {
                           football: currentSettings.apiFootballKey,
                           sportmonks: currentSettings.sportmonksKey,
-                          elevenLabs: currentSettings.elevenLabsKey,
+                          // elevenLabs: currentSettings.elevenLabsKey, // Don't send if we don't want it, or send empty
                           openRouter: currentSettings.openRouterKey
                       }
                   }),
@@ -339,7 +342,7 @@ const App: React.FC = () => {
               }
 
               const data = await response.json();
-              // console.log("N8N Response:", data);
+              console.log("N8N Response:", JSON.stringify(data, null, 2));
 
               if (isMounted) {
                   // Update Stats History
@@ -349,47 +352,35 @@ const App: React.FC = () => {
                   
                   // Process new events from N8N
                   if (data.events && Array.isArray(data.events) && data.events.length > 0) {
-                     const newItems: AudioItem[] = [];
-                     
-                     data.events.forEach((event: any) => {
-                         // Prevent duplicates
-                         if (event.id === lastEventRef.current) return;
-                         lastEventRef.current = event.id;
+                     setQueue(prev => {
+                         const newItems: AudioItem[] = [];
                          
-                         try {
-                            // Convert Base64 audio to Blob URL
-                            let audioUrl = '';
-                            if (event.audioBase64) {
-                                const byteCharacters = atob(event.audioBase64);
-                                const byteNumbers = new Array(byteCharacters.length);
-                                for (let i = 0; i < byteCharacters.length; i++) {
-                                    byteNumbers[i] = byteCharacters.charCodeAt(i);
-                                }
-                                const byteArray = new Uint8Array(byteNumbers);
-                                const blob = new Blob([byteArray], { type: 'audio/mpeg' });
-                                audioUrl = URL.createObjectURL(blob);
-                            }
-                            
-                            newItems.push({
-                                id: event.id,
-                                filename: `ai_commentary_${event.id}.mp3`,
-                                source: AudioSource.AI,
-                                duration: 'Unknown',
-                                timestamp: new Date(),
-                                status: AudioStatus.QUEUED,
-                                description: event.description || event.text || 'New Event',
-                                audioUrl: audioUrl
-                            });
-                         } catch (e) {
-                             console.error("Failed to process audio for event", event.id, e);
-                         }
-                     });
-    
-                     if (newItems.length > 0) {
-                        setQueue(prev => {
-                            const playing = prev.find(i => i.status === AudioStatus.PLAYING);
-                            const waiting = prev.filter(i => i.status !== AudioStatus.PLAYING);
-                            
+                         // Deduplicate against current queue
+                         const existingIds = new Set(prev.map(i => i.id));
+
+                         data.events.forEach((event: any) => {
+                             // Prevent duplicates (Strict Check)
+                             if (existingIds.has(event.id)) return;
+                             if (event.id === lastEventRef.current) return;
+                             
+                             console.log("📢 New Event:", event.id, "Text:", event.text?.substring(0, 100), "...");
+                             
+                             lastEventRef.current = event.id;
+                             
+                             newItems.push({
+                                 id: event.id,
+                                 filename: `text_event_${event.id}`,
+                                 source: AudioSource.AI,
+                                 duration: 'Text',
+                                 timestamp: new Date(),
+                                 status: AudioStatus.QUEUED,
+                                 description: event.description || 'New Event',
+                                 text: event.text || '', // Capture full commentary text
+                                 audioUrl: '' // No audio URL needed
+                             });
+                         });
+        
+                         if (newItems.length > 0) {
                             // Priority Logic
                             const importantKeywords = ['Goal', 'Penalty', 'Red Card', 'Yellow Card', 'VAR'];
                             const priorityItems = newItems.filter(i => importantKeywords.some(k => i.description?.includes(k)));
@@ -399,12 +390,6 @@ const App: React.FC = () => {
                             const playingIndex = updatedQueue.findIndex(i => i.status === AudioStatus.PLAYING);
                             
                             if (priorityItems.length > 0) {
-                                 if (!currentSettings.autoPlay) {
-                                    const newSettings = { ...currentSettings, autoPlay: true };
-                                    setSettings(newSettings);
-                                    localStorage.setItem('ai_livestream_settings', JSON.stringify(newSettings));
-                                 }
-                                 
                                  if (playingIndex !== -1) {
                                      updatedQueue.splice(playingIndex + 1, 0, ...priorityItems);
                                  } else {
@@ -415,7 +400,7 @@ const App: React.FC = () => {
                             } else {
                                  updatedQueue = [...updatedQueue, ...newItems];
                             }
-    
+        
                             const isPlayingNow = updatedQueue.some(i => i.status === AudioStatus.PLAYING);
                             if (!isPlayingNow && currentSettings.autoPlay) {
                                 const nextToPlay = updatedQueue.find(i => i.status === AudioStatus.QUEUED);
@@ -424,8 +409,9 @@ const App: React.FC = () => {
                                 }
                             }
                             return updatedQueue;
-                        });
-                     }
+                         }
+                         return prev;
+                     });
                   }
                   
                   setStatus(prev => ({ ...prev, n8nConnection: true }));
@@ -523,7 +509,7 @@ const App: React.FC = () => {
          setSettings(newSettings);
          localStorage.setItem('ai_livestream_settings', JSON.stringify(newSettings));
     }
-    handleAudioEnded();
+    handleItemFinished();
   };
 
   const handleStop = () => {
@@ -640,12 +626,7 @@ const App: React.FC = () => {
     setShowSearch(false);
 
     // FORCE IMMEDIATE POLL TRIGGER
-    // Reset Poll Count to 0 so next poll is #1 (Triggers API Call)
     pollCountRef.current = 0; 
-    // Note: The useEffect hook for pollN8N will detect the settings change and 
-    // naturally restart the polling loop or continue it with new settings.
-    // However, to be instantaneous, we rely on the fast polling interval (1s) 
-    // and the reset of pollCountRef ensuring the next hit is an API Call.
   };
 
   const handleResetMatch = () => {
@@ -679,6 +660,7 @@ const App: React.FC = () => {
             lastStats: lastStatsRef.current,
             persona: settings.persona,
             skipApi: true,
+            skipAudio: true, // NEW: Tell N8N to skip audio generation
             type: 'CHAT',
             userMessage: message,
             dataProvider: settings.dataProvider || 'api-football',
@@ -688,7 +670,7 @@ const App: React.FC = () => {
             keys: {
                 football: settings.apiFootballKey,
                 sportmonks: settings.sportmonksKey,
-                elevenLabs: settings.elevenLabsKey,
+                // elevenLabs: settings.elevenLabsKey,
                 openRouter: settings.openRouterKey
             }
         };
@@ -711,30 +693,19 @@ const App: React.FC = () => {
              
              data.events.forEach((event: any) => {
                  try {
-                    let audioUrl = '';
-                    if (event.audioBase64) {
-                        const byteCharacters = atob(event.audioBase64);
-                        const byteNumbers = new Array(byteCharacters.length);
-                        for (let i = 0; i < byteCharacters.length; i++) {
-                            byteNumbers[i] = byteCharacters.charCodeAt(i);
-                        }
-                        const byteArray = new Uint8Array(byteNumbers);
-                        const blob = new Blob([byteArray], { type: 'audio/mpeg' });
-                        audioUrl = URL.createObjectURL(blob);
-                    }
-                    
                     newItems.push({
                         id: event.id || `chat_${Date.now()}`,
-                        filename: `ai_chat_${event.id}.mp3`,
+                        filename: `chat_text_${event.id}`,
                         source: AudioSource.AI,
-                        duration: 'Unknown',
+                        duration: 'Text',
                         timestamp: new Date(),
                         status: AudioStatus.QUEUED,
-                        description: event.description || event.text || 'Chat Response',
-                        audioUrl: audioUrl
+                        description: event.description || 'Chat Response',
+                        text: event.text, // Capture full commentary text
+                        audioUrl: ''
                     });
                  } catch (e) {
-                     console.error("Failed to process audio for event", event.id, e);
+                     console.error("Failed to process text for event", event.id, e);
                  }
              });
 
@@ -791,6 +762,14 @@ const App: React.FC = () => {
         dataProvider={settings.dataProvider}
         apiKey={settings.apiFootballKey}
         sportmonksKey={settings.sportmonksKey}
+      />
+      
+      {/* New Text Popup Component */}
+      <TextPopup 
+        title={currentPlaying?.description}
+        text={currentPlaying?.text || ''}
+        isVisible={!!currentPlaying && currentPlaying.source === AudioSource.AI}
+        onClose={handleItemFinished}
       />
 
       <Header 

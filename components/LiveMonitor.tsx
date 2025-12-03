@@ -177,26 +177,39 @@ const LiveMonitor: React.FC<LiveMonitorProps> = ({ currentAudio, liveMatchUrl, m
         />
         
         {/* Center Content: Visualizer / Status */}
-        <div className="relative z-0 w-full max-w-md px-6 transition-all duration-500">
+        <div className="relative z-0 w-full max-w-2xl px-6 transition-all duration-500">
             {matchId ? (
                 currentAudio ? (
                     <div className="text-center">
-                        <div className="relative w-32 h-32 mx-auto mb-6 flex items-center justify-center">
+                        <div className="relative w-24 h-24 mx-auto mb-4 flex items-center justify-center">
                             <div className="absolute inset-0 bg-accent-500/20 rounded-full animate-pulse"></div>
                              {/* Keep simple activity icon or custom anim */}
-                            <Activity className="w-16 h-16 text-accent-500" />
+                            <Activity className="w-12 h-12 text-accent-500" />
                         </div>
                         
-                        <div className="bg-gray-900/80 backdrop-blur-md border border-gray-800 rounded-xl p-6 shadow-2xl transform transition-all">
-                            <p className="text-accent-500 text-xs font-bold mb-2 uppercase tracking-wider animate-pulse">On Air • AI Commentary</p>
-                            <p className="text-white text-lg font-semibold leading-relaxed mb-4 line-clamp-3">
-                                {currentAudio.description || "Processing Event..."}
-                            </p>
-                            <div className="flex gap-1 justify-center items-end h-12">
+                        <div className="bg-gray-900/80 backdrop-blur-md border border-gray-800 rounded-xl p-6 shadow-2xl transform transition-all max-h-[50vh] overflow-y-auto max-w-lg">
+                            <p className="text-accent-500 text-xs font-bold mb-3 uppercase tracking-wider animate-pulse">On Air • AI Commentary</p>
+                            
+                            {/* Full Commentary Text */}
+                            <div className="text-white text-base font-medium leading-relaxed mb-4 text-left whitespace-pre-wrap">
+                                {currentAudio.text && currentAudio.text.length > 0 
+                                    ? currentAudio.text 
+                                    : (currentAudio.description || "Processing Event...")
+                                }
+                            </div>
+                            
+                            {/* Short Description Label - Only show if text exists and is different from description */}
+                            {currentAudio.text && currentAudio.text.length > 0 && currentAudio.description && (
+                                <p className="text-gray-500 text-xs border-t border-gray-700 pt-3 mt-3">
+                                    📌 {currentAudio.description}
+                                </p>
+                            )}
+                            
+                            <div className="flex gap-1 justify-center items-end h-10 mt-4">
                                 {visualizerBars.map((height, i) => (
                                     <div 
                                         key={i} 
-                                        className="w-1.5 bg-accent-500 rounded-t-sm transition-all duration-75"
+                                        className="w-1 bg-accent-500 rounded-t-sm transition-all duration-75"
                                         style={{ height: `${height}%` }}
                                     />
                                 ))}
