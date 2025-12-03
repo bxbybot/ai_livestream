@@ -17,7 +17,17 @@ const App: React.FC = () => {
   // Settings with LocalStorage Persistence
   const [settings, setSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem('ai_livestream_settings');
-    return saved ? JSON.parse(saved) : {
+    if (saved) {
+        // Merge saved settings with default in case of missing keys
+        const parsed = JSON.parse(saved);
+        return {
+            ...parsed,
+            // Ensure n8nUrl is correct if empty or old default
+            n8nUrl: parsed.n8nUrl || 'https://n8n.srv1142799.hstgr.cloud/webhook/ai-director'
+        };
+    }
+    // Default Settings for First Load
+    return {
         n8nUrl: 'https://n8n.srv1142799.hstgr.cloud/webhook/ai-director',
         matchId: '',
         persona: 'Funny, energetic commentator like a friend watching the game.',
@@ -52,7 +62,11 @@ const App: React.FC = () => {
   // Update settings ref whenever settings change
   useEffect(() => {
     settingsRef.current = settings;
-  }, [settings]);
+    // Auto-connect status if n8n URL is present
+    if (settings.n8nUrl && isStarted) {
+        setStatus(prev => ({ ...prev, n8nConnection: true }));
+    }
+  }, [settings, isStarted]);
 
   // Initialize Audio Context on user start
   const handleStart = () => {
