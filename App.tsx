@@ -178,6 +178,106 @@ const App: React.FC = () => {
 
 
   // -------------------------------------------------------------------------
+  // DIRECT DATA POLLING: REALTIME SCORE & TIME (Bypassing N8N for UI speed)
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+      if (!isStarted || !settings.matchId) return;
+
+      const fetchRealtimeStatus = async () => {
+          const currentSettings = settingsRef.current;
+          if (!currentSettings.apiFootballKey && !currentSettings.sportmonksKey) return;
+
+          try {
+              let newDetails: MatchDetails | null = null;
+
+              if (currentSettings.dataProvider === 'sportmonks' && currentSettings.sportmonksKey) {
+                  // Sportmonks V3
+                  const res = await fetch(`https://api.sportmonks.com/v3/football/fixtures/${currentSettings.matchId}?api_token=${currentSettings.sportmonksKey}&include=participants;state;scores`);
+                  if (res.ok) {
+                      const data = await res.json();
+                      const m = data.data;
+                      if (m) {
+                           // Parse similar to MatchSearchModal
+                           const home = m.participants.find((p: any) => p.meta?.location === 'home') || m.participants[0];
+                           const away = m.participants.find((p: any) => p.meta?.location === 'away') || m.participants[1];
+                           
+                           // Better score parsing
+                           let hGoals = 0, aGoals = 0;
+                           if (m.scores && m.scores.length > 0) {
+                                const homeScoreObj = m.scores.find((s: any) => s.score.participant === 'home' && s.description === 'CURRENT');
+                                const awayScoreObj = m.scores.find((s: any) => s.score.participant === 'away' && s.description === 'CURRENT');
+                                if (homeScoreObj) hGoals = homeScoreObj.score.goals;
+                                if (awayScoreObj) aGoals = awayScoreObj.score.goals;
+                           }
+
+                           newDetails = {
+                                fixtureId: m.id,
+                                teams: {
+                                    home: { name: home?.name || 'Home', logo: home?.image_path || '' },
+                                    away: { name: away?.name || 'Away', logo: away?.image_path || '' }
+                                },
+                                goals: { home: hGoals, away: aGoals },
+                                league: { name: currentSettings.matchDetails?.league.name || 'Unknown' },
+                                status: {
+                                    elapsed: m.state?.id === 5 ? 90 : (m.state?.minute || 0),
+                                    short: m.state?.short_code || 'NS'
+                                }
+                           };
+                      }
+                  }
+              } else if (currentSettings.apiFootballKey) {
+                  // API-Football
+                  const res = await fetch(`https://v3.football.api-sports.io/fixtures?id=${currentSettings.matchId}`, {
+                      headers: {
+                          "x-rapidapi-key": currentSettings.apiFootballKey,
+                          "x-rapidapi-host": "v3.football.api-sports.io"
+                      }
+                  });
+                  if (res.ok) {
+                      const data = await res.json();
+                      if (data.response && data.response.length > 0) {
+                          const m = data.response[0];
+                          newDetails = {
+                              fixtureId: m.fixture.id,
+                              teams: m.teams,
+                              goals: m.goals,
+                              league: { name: m.league.name },
+                              status: m.fixture.status
+                          };
+                      }
+                  }
+              }
+
+              // Update State if changed (avoid unnecessary re-renders)
+              if (newDetails) {
+                  setSettings(prev => {
+                      const prevStatus = prev.matchDetails?.status;
+                      const prevGoals = prev.matchDetails?.goals;
+                      
+                      const timeChanged = prevStatus?.elapsed !== newDetails!.status.elapsed;
+                      const statusChanged = prevStatus?.short !== newDetails!.status.short;
+                      const scoreChanged = prevGoals?.home !== newDetails!.goals.home || prevGoals?.away !== newDetails!.goals.away;
+
+                      if (timeChanged || statusChanged || scoreChanged) {
+                          return { ...prev, matchDetails: newDetails! };
+                      }
+                      return prev;
+                  });
+              }
+
+          } catch (error) {
+              console.error("Realtime Status Poll Failed:", error);
+          }
+      };
+
+      // Poll every 15 seconds for UI updates (Balance between Realtime and API Limits)
+      const interval = setInterval(fetchRealtimeStatus, 15000);
+      fetchRealtimeStatus(); // Initial call
+
+      return () => clearInterval(interval);
+  }, [isStarted, settings.matchId]); // Re-run if match changes
+
+  // -------------------------------------------------------------------------
   // N8N POLLING LOOP: FETCHING NEW EVENTS
   // -------------------------------------------------------------------------
   useEffect(() => {
